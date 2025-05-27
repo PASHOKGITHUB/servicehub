@@ -1,4 +1,3 @@
-// Create this file: scripts/createAdmin.ts (in your backend folder)
 
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
