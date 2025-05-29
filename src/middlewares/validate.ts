@@ -1,4 +1,3 @@
-// src/middlewares/validate.ts
 import { Request, Response, NextFunction } from 'express';
 import { ZodSchema } from 'zod';
 import { ApiError } from '../utils/apiError';
@@ -14,8 +13,12 @@ export const validate = (schema: ZodSchema) => {
           field: err.path.join('.'),
           message: err.message,
         }));
-
-        throw new ApiError(HTTP_STATUS.UNPROCESSABLE_ENTITY, 'Validation error', errors);
+        
+        throw new ApiError(
+          HTTP_STATUS.UNPROCESSABLE_ENTITY, 
+          'Validation error', 
+          errors
+        );
       }
 
       req.body = result.data;

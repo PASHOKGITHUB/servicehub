@@ -1,6 +1,4 @@
-// src/routes/user.route.ts
 import { Router } from 'express';
-import { isAuthenticated, isAdmin,isUser } from '../middlewares/auth';
 import {
   getUserDashboard,
   browseServices,
@@ -10,20 +8,20 @@ import {
   cancelBooking,
   createReview,
   getUserReviews,
+  updateReview,
+  deleteReview,
 } from '../controllers/user.controller';
-
 import { validate } from '../middlewares/validate';
+import { isAuthenticated, isUser } from '../middlewares/auth';
 import {
   createBookingSchema,
 } from '../validators/booking.schema';
-
+import {
+  createReviewSchema,
+  updateReviewSchema,
+} from '../validators/review.schema';
 
 const router: Router = Router();
-
-// Placeholder routes - will be implemented later
-router.get('/', isAuthenticated, isAdmin, (req, res) => {
-  res.json({ message: 'User routes - Coming soon' });
-});
 
 // Public routes
 router.get('/services', browseServices);
@@ -41,8 +39,9 @@ router.get('/bookings', getUserBookings);
 router.put('/bookings/:id/cancel', cancelBooking);
 
 // Reviews
-router.post('/reviews', createReview);
+router.post('/reviews', validate(createReviewSchema), createReview);
 router.get('/reviews', getUserReviews);
-
+router.put('/reviews/:id', validate(updateReviewSchema), updateReview);
+router.delete('/reviews/:id', deleteReview);
 
 export default router;

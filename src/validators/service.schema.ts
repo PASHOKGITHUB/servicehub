@@ -8,7 +8,7 @@ export const createServiceSchema = z.object({
     .trim(),
   description: z
     .string()
-    .min(20, 'Description must be at least 20 characters long')
+    .min(5, 'Description must be at least 5 characters long')
     .max(1000, 'Description cannot exceed 1000 characters')
     .trim(),
   category: z
@@ -37,7 +37,7 @@ export const updateServiceSchema = z.object({
     .optional(),
   description: z
     .string()
-    .min(20, 'Description must be at least 20 characters long')
+    .min(5, 'Description must be at least 5 characters long')
     .max(1000, 'Description cannot exceed 1000 characters')
     .trim()
     .optional(),

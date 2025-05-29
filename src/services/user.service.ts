@@ -363,6 +363,57 @@ class UserService {
       },
     };
   }
+
+  // Add these methods to the existing UserService class
+
+async updateReview(userId: string, reviewId: string, updateData: any) {
+  const review = await Review.findOneAndUpdate(
+    { _id: reviewId, customer: userId },
+    updateData,
+    { new: true, runValidators: true }
+  ).populate([
+    { path: 'service', select: 'name' },
+    { path: 'provider', select: 'name' },
+  ]);
+
+  if (!review) {
+    throw new ApiError(HTTP_STATUS.NOT_FOUND, 'Review not found');
+  }
+
+  // Update service rating if rating changed
+  if (updateData.rating) {
+    const reviews = await Review.find({ service: review.service });
+    const averageRating = reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;
+
+    await Service.findByIdAndUpdate(review.service, {
+      averageRating: Math.round(averageRating * 10) / 10,
+    });
+  }
+
+  return review;
+}
+
+async deleteReview(userId: string, reviewId: string): Promise<void> {
+  const review = await Review.findOne({ _id: reviewId, customer: userId });
+  
+  if (!review) {
+    throw new ApiError(HTTP_STATUS.NOT_FOUND, 'Review not found');
+  }
+
+  await Review.findByIdAndDelete(reviewId);
+
+  // Update service rating
+  const reviews = await Review.find({ service: review.service });
+  const averageRating = reviews.length > 0 
+    ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length 
+    : 0;
+
+  await Service.findByIdAndUpdate(review.service, {
+    averageRating: Math.round(averageRating * 10) / 10,
+    totalReviews: reviews.length,
+  });
+}
+
 }
 
 export const userService = new UserService();

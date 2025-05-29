@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { userService } from '../services/user.service';
 import { ApiResponse } from '../utils/apiResponse';
+import { ApiError } from '../utils/apiError';
 import { asyncHandler } from '../utils/asyncHandler';
 import { HTTP_STATUS } from '../constants';
 
@@ -69,5 +70,21 @@ export const getUserReviews = asyncHandler(async (req: Request, res: Response) =
   
   res.status(HTTP_STATUS.OK).json(
     new ApiResponse(HTTP_STATUS.OK, result, 'Reviews retrieved successfully')
+  );
+});
+
+export const updateReview = asyncHandler(async (req: Request, res: Response) => {
+  const review = await userService.updateReview(req.user._id, req.params.id, req.body);
+  
+  res.status(HTTP_STATUS.OK).json(
+    new ApiResponse(HTTP_STATUS.OK, { review }, 'Review updated successfully')
+  );
+});
+
+export const deleteReview = asyncHandler(async (req: Request, res: Response) => {
+  await userService.deleteReview(req.user._id, req.params.id);
+  
+  res.status(HTTP_STATUS.OK).json(
+    new ApiResponse(HTTP_STATUS.OK, {}, 'Review deleted successfully')
   );
 });
