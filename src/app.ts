@@ -1,38 +1,41 @@
-// Alternative: Super minimal app.ts (use if TypeScript errors persist)
 import express, { Application, Request, Response } from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import morgan from 'morgan';
+import compression from 'compression';
+import { config } from './config/index';
+import { errorMiddleware, notFound } from './middlewares/error';
 import { ApiResponse } from './utils/apiResponse';
 import { HTTP_STATUS } from './constants/index';
-import { errorMiddleware, notFound } from './middlewares/error';
-import cors from 'cors';
 
+// Import routes
+import authRoutes from './routes/auth.route';
 import adminRoutes from './routes/admin.route';
 import providerRoutes from './routes/provider.route';
 import userRoutes from './routes/user.route';
 import commonRoutes from './routes/common.route';
-
-import authRoutes from './routes/auth.route';
-import cookieParser from 'cookie-parser';
+import bookingRoutes from './routes/booking.route'; // Add this line
 
 const app: Application = express();
 
-// Only essential middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Basic middleware
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-
+// Security middleware
+app.use(helmet());
 app.use(cors({
-  origin: [
-    'http://localhost:3000',
-    'http://localhost:3001',
-    'https://servicehubdev.vercel.app',
-    process.env.FRONTEND_URL || 'http://localhost:3000'
-  ],
+  origin: config.cors.origin,
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE','PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
-app.use(cookieParser());
+// Logging - only in development
+if (config.nodeEnv === 'development') {
+  app.use(morgan('dev'));
+}
+
+// Compression
+app.use(compression());
 
 // Routes
 app.get('/', (req: Request, res: Response) => {
@@ -41,11 +44,16 @@ app.get('/', (req: Request, res: Response) => {
     {
       name: 'ServiceHub API',
       version: '1.0.0',
-      status: 'Running with authentication',
+      description: 'A comprehensive service booking platform API',
+      status: 'Server running successfully',
       endpoints: {
-        register: 'POST /api/v1/auth/register',
-        login: 'POST /api/v1/auth/login',
-        profile: 'GET /api/v1/auth/profile'
+        auth: 'POST /api/v1/auth/*',
+        admin: 'GET /api/v1/admin/*',
+        provider: 'GET /api/v1/provider/*',
+        user: 'GET /api/v1/user/*',
+        bookings: 'POST /api/v1/bookings/*', // Add this line
+        common: 'GET /api/v1/common/*',
+        health: 'GET /health'
       }
     },
     'Welcome to ServiceHub API'
@@ -55,7 +63,14 @@ app.get('/', (req: Request, res: Response) => {
 app.get('/health', (req: Request, res: Response) => {
   res.status(HTTP_STATUS.OK).json(new ApiResponse(
     HTTP_STATUS.OK,
-    { status: 'OK', timestamp: new Date().toISOString() },
+    {
+      status: 'OK',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      database: 'Connected',
+      cloudinary: 'Connected',
+      razorpay: 'Connected',
+    },
     'Service is healthy'
   ));
 });
@@ -65,10 +80,13 @@ app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/admin', adminRoutes);
 app.use('/api/v1/provider', providerRoutes);
 app.use('/api/v1/user', userRoutes);
+app.use('/api/v1/bookings', bookingRoutes); // Add this line
 app.use('/api/v1/common', commonRoutes);
 
-// Error handling
+// 404 handler
 app.all('*', notFound);
+
+// Error handling
 app.use(errorMiddleware);
 
 export default app;

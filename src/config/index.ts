@@ -16,4 +16,8 @@ export const config = {
   cors: {
     origin: process.env.FRONTEND_URL || 'https://servicehubdev.vercel.app',
   },
+   razorpay: {
+    keyId: process.env.RAZORPAY_KEY_ID || '',
+    keySecret: process.env.RAZORPAY_KEY_SECRET || '',
+  },
 };
