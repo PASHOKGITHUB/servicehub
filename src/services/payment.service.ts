@@ -1,8 +1,12 @@
-// src/services/payment.service.ts
+// =====================================================
+// src/services/payment.service.ts - FIXED VERSION
+// =====================================================
 
 import { razorpayInstance, validateRazorpayPayment } from '../config/razorpay';
 import { Payment, PaymentGatewayStatus, PaymentMethod } from '../models/payment.model';
 import { Booking, BookingStatus, PaymentStatus } from '../models/booking.model';
+import { Service } from '../models/service.model'; // ✅ Added Service import
+import { User } from '../models/user.model'; // ✅ Added User import for provider stats
 import { ApiError } from '../utils/apiError';
 import { HTTP_STATUS } from '../constants';
 import { Types } from 'mongoose';
@@ -72,6 +76,7 @@ class PaymentService {
     return payment;
   }
 
+  // ✅ FIXED: Now updates ALL required tables when payment is verified
   async verifyRazorpayPayment(
     paymentId: string,
     razorpayOrderId: string,
@@ -89,30 +94,91 @@ class PaymentService {
       throw new ApiError(HTTP_STATUS.BAD_REQUEST, 'Invalid payment signature');
     }
 
-    // Update payment record
-    const payment = await Payment.findByIdAndUpdate(
-      paymentId,
-      {
-        status: PaymentGatewayStatus.CAPTURED,
-        razorpayPaymentId,
-        razorpaySignature,
-      },
-      { new: true }
-    );
+    // Get payment record with booking details
+    const payment = await Payment.findById(paymentId).populate({
+      path: 'booking',
+      populate: {
+        path: 'service provider',
+        select: 'name totalBookings'
+      }
+    });
 
     if (!payment) {
       throw new ApiError(HTTP_STATUS.NOT_FOUND, 'Payment record not found');
     }
 
-    // Update booking status
-    await Booking.findByIdAndUpdate(payment.booking, {
-      paymentStatus: PaymentStatus.PAID,
-      status: BookingStatus.CONFIRMED,
-    });
+    // Start a database transaction to ensure all updates succeed together
+    const session = await Payment.startSession();
+    
+    try {
+      await session.withTransaction(async () => {
+        // 1. ✅ Update payment record
+        await Payment.findByIdAndUpdate(
+          paymentId,
+          {
+            status: PaymentGatewayStatus.CAPTURED,
+            razorpayPaymentId,
+            razorpaySignature,
+          },
+          { session }
+        );
 
-    return payment;
+        // 2. ✅ Update booking status
+        const updatedBooking = await Booking.findByIdAndUpdate(
+          payment.booking._id,
+          {
+            paymentStatus: PaymentStatus.PAID,
+            status: BookingStatus.CONFIRMED, // Payment confirmed = booking confirmed
+          },
+          { session, new: true }
+        );
+
+        if (!updatedBooking) {
+          throw new ApiError(HTTP_STATUS.NOT_FOUND, 'Booking not found');
+        }
+
+        // 3. ✅ Update Service statistics (INCREMENT totalBookings)
+        await Service.findByIdAndUpdate(
+          updatedBooking.service,
+          {
+            $inc: { totalBookings: 1 } // Increment total bookings by 1
+          },
+          { session }
+        );
+
+        // 4. ✅ Update Provider statistics (optional - track provider earnings)
+        await User.findByIdAndUpdate(
+          updatedBooking.provider,
+          {
+            $inc: { 
+              totalEarnings: payment.amount,
+              totalBookings: 1
+            }
+          },
+          { session }
+        );
+
+        console.log('✅ Payment verification completed - All tables updated:', {
+          paymentId: payment._id,
+          bookingId: updatedBooking._id,
+          serviceId: updatedBooking.service,
+          providerId: updatedBooking.provider,
+          amount: payment.amount
+        });
+      });
+    } catch (error) {
+      console.error('❌ Payment verification transaction failed:', error);
+      throw error;
+    } finally {
+      await session.endSession();
+    }
+
+    // Return updated payment record
+    const updatedPayment = await Payment.findById(paymentId);
+    return updatedPayment;
   }
 
+  // ✅ FIXED: Also handle service stats when payment fails
   async handlePaymentFailure(paymentId: string, failureReason: string) {
     const payment = await Payment.findByIdAndUpdate(
       paymentId,
@@ -124,14 +190,62 @@ class PaymentService {
     );
 
     if (payment) {
-      // Update booking status
+      // Update booking status to cancelled due to payment failure
       await Booking.findByIdAndUpdate(payment.booking, {
         paymentStatus: PaymentStatus.FAILED,
         status: BookingStatus.CANCELLED,
         cancelReason: 'Payment failed',
         cancelledAt: new Date(),
       });
+
+      console.log('❌ Payment failed - Booking cancelled:', {
+        paymentId: payment._id,
+        bookingId: payment.booking,
+        reason: failureReason
+      });
     }
+
+    return payment;
+  }
+
+  // ✅ NEW: Handle refunds (when booking is cancelled after payment)
+  async processRefund(bookingId: string, refundAmount: number, refundReason: string) {
+    const payment = await Payment.findOne({ 
+      booking: bookingId, 
+      status: PaymentGatewayStatus.CAPTURED 
+    });
+
+    if (!payment) {
+      throw new ApiError(HTTP_STATUS.NOT_FOUND, 'Payment not found for refund');
+    }
+
+    // Update payment status to refunded
+    await Payment.findByIdAndUpdate(payment._id, {
+      status: PaymentGatewayStatus.REFUNDED,
+      refundAmount,
+      failureReason: refundReason,
+    });
+
+    // Update booking
+    await Booking.findByIdAndUpdate(bookingId, {
+      paymentStatus: PaymentStatus.REFUNDED,
+      status: BookingStatus.REFUNDED,
+    });
+
+    // Decrement service total bookings (since booking is cancelled)
+    const booking = await Booking.findById(bookingId);
+    if (booking) {
+      await Service.findByIdAndUpdate(booking.service, {
+        $inc: { totalBookings: -1 } // Decrement by 1
+      });
+    }
+
+    console.log('💰 Refund processed:', {
+      paymentId: payment._id,
+      bookingId,
+      refundAmount,
+      reason: refundReason
+    });
 
     return payment;
   }

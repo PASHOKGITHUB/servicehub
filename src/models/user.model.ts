@@ -1,4 +1,7 @@
-// src/models/user.model.ts
+// =====================================================
+// src/models/user.model.ts - UPDATED WITH PROVIDER STATS
+// =====================================================
+
 import { Schema, model, Document } from 'mongoose';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -17,9 +20,20 @@ export interface IUser extends Document {
   isPhoneVerified: boolean;
   isActive: boolean;
   lastLogin?: Date;
+  
+  // ✅ Provider Statistics (added for tracking)
+  totalEarnings?: number;      // Total amount earned from completed bookings
+  totalBookings?: number;      // Total bookings received as provider
+  averageRating?: number;      // Average rating from customer reviews
+  totalReviews?: number;       // Total reviews received
+  
+  // ✅ Customer Statistics (optional)
+  totalSpent?: number;         // Total amount spent on services
+  totalServiceBookings?: number; // Total services booked as customer
+  
   createdAt: Date;
   updatedAt: Date;
-  
+
   // Methods
   comparePassword(candidatePassword: string): Promise<boolean>;
   generateAuthToken(): string;
@@ -79,6 +93,41 @@ const userSchema = new Schema<IUser>({
   lastLogin: {
     type: Date,
   },
+  
+  // ✅ Provider Statistics
+  totalEarnings: {
+    type: Number,
+    default: 0,
+    min: [0, 'Total earnings cannot be negative'],
+  },
+  totalBookings: {
+    type: Number,
+    default: 0,
+    min: [0, 'Total bookings cannot be negative'],
+  },
+  averageRating: {
+    type: Number,
+    default: 0,
+    min: [0, 'Rating cannot be negative'],
+    max: [5, 'Rating cannot exceed 5'],
+  },
+  totalReviews: {
+    type: Number,
+    default: 0,
+    min: [0, 'Total reviews cannot be negative'],
+  },
+  
+  // ✅ Customer Statistics
+  totalSpent: {
+    type: Number,
+    default: 0,
+    min: [0, 'Total spent cannot be negative'],
+  },
+  totalServiceBookings: {
+    type: Number,
+    default: 0,
+    min: [0, 'Total service bookings cannot be negative'],
+  },
 }, {
   timestamps: true,
   toJSON: { virtuals: true },
@@ -86,14 +135,14 @@ const userSchema = new Schema<IUser>({
 });
 
 // Indexes
-// userSchema.index({ email: 1 });
 userSchema.index({ role: 1 });
 userSchema.index({ isActive: 1 });
+userSchema.index({ averageRating: -1 }); // For provider rankings
+userSchema.index({ totalBookings: -1 }); // For provider rankings
 
 // Hash password before saving
 userSchema.pre('save', async function (next) {
   if (!this.isModified('password')) return next();
-  
   this.password = await bcrypt.hash(this.password, config.bcryptSaltRounds);
   next();
 });
@@ -103,15 +152,15 @@ userSchema.methods.comparePassword = async function (candidatePassword: string):
   return bcrypt.compare(candidatePassword, this.password);
 };
 
-// Generate auth token method - Fixed JWT typing
+// Generate auth token method
 userSchema.methods.generateAuthToken = function (): string {
   return jwt.sign(
-    { 
+    {
       userId: this._id.toString(),
-      role: this.role 
+      role: this.role
     },
     config.jwtSecret,
-    { 
+    {
       expiresIn: '7d' // Direct string value
     }
   );
